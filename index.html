@@ -25,7 +25,7 @@
 <body class="text-gray-800 antialiased h-screen flex flex-col">
 
     <!-- ==========================================
-         PENTING: GANTI URL DI BAWAH INI..
+         PENTING: GANTI URL DI BAWAH INI
          ========================================== -->
     <script>
         // PASTE URL WEB APP APPS SCRIPT ANDA DI SINI
@@ -217,8 +217,13 @@
             showLoading("Memeriksa kredensial...");
 
             try {
+                // UPDATE: Menambahkan text/plain untuk mencegah blokir CORS preflight browser
                 const response = await fetch(GAS_URL, {
                     method: 'POST',
+                    redirect: 'follow',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8',
+                    },
                     body: JSON.stringify({ action: 'login', username: user, password: pass })
                 });
                 
@@ -240,7 +245,7 @@
                     errorDiv.classList.remove('hidden');
                 }
             } catch (err) {
-                errorDiv.textContent = "Terjadi kesalahan jaringan/CORS. Periksa URL Apps Script.";
+                errorDiv.textContent = "Terjadi kesalahan jaringan/CORS. Periksa pengaturan Apps Script Anda.";
                 errorDiv.classList.remove('hidden');
                 console.error(err);
             } finally {
@@ -276,8 +281,13 @@
             showLoading(`Menyimpan resi: ${decodedText}`);
 
             try {
+                // UPDATE: Menambahkan text/plain untuk mencegah blokir CORS preflight browser
                 const response = await fetch(GAS_URL, {
                     method: 'POST',
+                    redirect: 'follow',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8',
+                    },
                     body: JSON.stringify({
                         action: 'save',
                         petugas: currentUser.name,
