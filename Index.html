@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aplikasi Scan Resi Gudang</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HTML5 QRCode Library untuk Kamera -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        body { background-color: #f3f4f6; }
+        #reader { width: 100%; max-width: 500px; margin: 0 auto; border-radius: 0.5rem; overflow: hidden; }
+        #reader video { object-fit: cover; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; font-weight: 600; }
+        .tab-inactive { color: #6b7280; font-weight: 400; }
+        /* Animasi loading pulse */
+        .loading-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    </style>
+</head>
+<body class="text-gray-800 antialiased h-screen flex flex-col">
+
+    <!-- ==========================================
+         PENTING: GANTI URL DI BAWAH INI
+         ========================================== -->
+    <script>
+        // PASTE URL WEB APP APPS SCRIPT ANDA DI SINI
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyR7XytCR3YslNKTdB8AK4FhKHDHdSkQz6wr3fsBzxERuv24looi8sCiMY2NSaIGTrt/exec"; 
+    </script>
+
+    <!-- CONTAINER UTAMA -->
+    <div class="flex-1 max-w-md w-full mx-auto bg-white shadow-lg overflow-hidden flex flex-col relative">
+        
+        <!-- ==========================================
+             HALAMAN LOGIN
+             ========================================== -->
+        <div id="login-page" class="flex-1 flex flex-col justify-center p-6">
+            <div class="text-center mb-8">
+                <i class="ph ph-package text-6xl text-blue-500 mb-2"></i>
+                <h1 class="text-2xl font-bold text-gray-800">Sistem Scan Resi</h1>
+                <p class="text-gray-500 text-sm">Masuk untuk memulai proses scanning</p>
+            </div>
+
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="ph ph-user text-gray-400 text-lg"></i>
+                        </div>
+                        <input type="text" id="username" required autocomplete="off"
+                            class="pl-10 w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="ph ph-lock-key text-gray-400 text-lg"></i>
+                        </div>
+                        <input type="password" id="password" required
+                            class="pl-10 w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50">
+                    </div>
+                </div>
+
+                <div id="login-error" class="text-red-500 text-sm text-center hidden"></div>
+
+                <button type="submit" id="btn-login"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 flex justify-center items-center">
+                    <span>Masuk</span>
+                </button>
+            </form>
+        </div>
+
+        <!-- ==========================================
+             HALAMAN APLIKASI (SCANNER)
+             ========================================== -->
+        <div id="app-page" class="hidden flex-1 flex flex-col h-full">
+            
+            <!-- Header -->
+            <div class="bg-blue-600 text-white p-4 flex justify-between items-center shadow-md">
+                <div>
+                    <h2 class="font-bold text-lg leading-tight">Scan Resi</h2>
+                    <p class="text-blue-200 text-xs flex items-center gap-1">
+                        <i class="ph ph-user-circle"></i> <span id="display-user">Nama Petugas</span>
+                    </p>
+                </div>
+                <button onclick="logout()" class="p-2 bg-blue-700 hover:bg-blue-800 rounded-lg transition">
+                    <i class="ph ph-sign-out text-xl"></i>
+                </button>
+            </div>
+
+            <!-- TABS -->
+            <div class="flex border-b border-gray-200 bg-white">
+                <button onclick="switchTab('camera')" id="tab-camera" class="flex-1 py-3 text-center tab-active flex items-center justify-center gap-2">
+                    <i class="ph ph-camera text-lg"></i> Kamera HP
+                </button>
+                <button onclick="switchTab('usb')" id="tab-usb" class="flex-1 py-3 text-center tab-inactive flex items-center justify-center gap-2">
+                    <i class="ph ph-barcode text-lg"></i> USB Scanner
+                </button>
+            </div>
+
+            <div class="flex-1 p-4 flex flex-col bg-gray-50 overflow-y-auto">
+                
+                <!-- VIEW: KAMERA -->
+                <div id="view-camera" class="flex flex-col items-center flex-1">
+                    <p class="text-sm text-gray-500 mb-2 text-center">Arahkan kamera ke barcode resi.</p>
+                    <div id="reader" class="w-full bg-black shadow-inner rounded-xl border border-gray-300"></div>
+                </div>
+
+                <!-- VIEW: USB SCANNER -->
+                <div id="view-usb" class="hidden flex flex-col items-center flex-1 justify-center">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 w-full text-center">
+                        <i class="ph ph-barcode text-6xl text-gray-400 mb-4 inline-block"></i>
+                        <p class="text-sm text-gray-600 mb-4">Pastikan kursor berada di kotak ini, lalu gunakan alat scanner USB Anda.</p>
+                        <form id="usb-form" onsubmit="event.preventDefault(); processUsbScan();">
+                            <input type="text" id="usb-input" placeholder="Klik disini & scan..." autocomplete="off"
+                                class="w-full p-4 text-center text-xl font-mono border-2 border-blue-300 rounded-lg focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition outline-none">
+                            <button type="submit" class="hidden">Submit</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- NOTIFIKASI / STATUS HASIL SCAN -->
+                <div class="mt-6">
+                    <div id="scan-status" class="hidden p-4 rounded-lg flex items-start gap-3 shadow-sm border">
+                        <i id="status-icon" class="text-2xl mt-0.5"></i>
+                        <div class="flex-1">
+                            <h4 id="status-title" class="font-bold text-sm"></h4>
+                            <p id="status-message" class="text-xs mt-1 text-gray-600"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIWAYAT SEMENTARA -->
+                <div class="mt-6">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Baru saja di-scan</h3>
+                    <ul id="scan-history" class="space-y-2">
+                        <!-- List riwayat muncul disini -->
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- OVERLAY LOADING GLOBAL -->
+        <div id="loading-overlay" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col justify-center items-center z-50">
+            <div class="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p id="loading-text" class="mt-4 text-blue-800 font-medium">Memproses...</p>
+        </div>
+    </div>
+
+    <!-- SOUND EFFECTS -->
+    <script>
+        // Beep sound generator untuk sukses scan
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep(type = 'success') {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            if (type === 'success') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.1);
+            } else { // error
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+    </script>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // State
+        let currentUser = null;
+        let html5QrcodeScanner = null;
+        let isProcessingScan = false;
+
+        // DOM Elements
+        const elLogin = document.getElementById('login-page');
+        const elApp = document.getElementById('app-page');
+        const elLoading = document.getElementById('loading-overlay');
+        const elLoadingText = document.getElementById('loading-text');
+
+        // ==========================================
+        // 1. SISTEM LOGIN
+        // ==========================================
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (GAS_URL === "URL_APPS_SCRIPT_ANDA_PASTE_DISINI") {
+                alert("PENTING: Anda belum mengganti GAS_URL di dalam kode HTML. Silakan ganti dengan URL Web App Apps Script Anda.");
+                return;
+            }
+
+            const user = document.getElementById('username').value.trim();
+            const pass = document.getElementById('password').value.trim();
+            const errorDiv = document.getElementById('login-error');
+            
+            errorDiv.classList.add('hidden');
+            showLoading("Memeriksa kredensial...");
+
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'login', username: user, password: pass })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentUser = result; // {name: '...', role: '...'}
+                    document.getElementById('display-user').textContent = `${currentUser.name} (${currentUser.role})`;
+                    
+                    // Bersihkan form & Pindah halaman
+                    document.getElementById('login-form').reset();
+                    elLogin.classList.add('hidden');
+                    elApp.classList.remove('hidden');
+                    
+                    // Inisialisasi Scanner default
+                    initCameraScanner();
+                } else {
+                    errorDiv.textContent = result.message || "Login gagal.";
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorDiv.textContent = "Terjadi kesalahan jaringan/CORS. Periksa URL Apps Script.";
+                errorDiv.classList.remove('hidden');
+                console.error(err);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        function logout() {
+            if(confirm("Apakah Anda yakin ingin keluar?")) {
+                currentUser = null;
+                elApp.classList.add('hidden');
+                elLogin.classList.remove('hidden');
+                stopCameraScanner();
+                document.getElementById('scan-history').innerHTML = ''; // bersihkan riwayat
+                hideStatus();
+            }
+        }
+
+        // ==========================================
+        // 2. SISTEM SCAN & KIRIM KE DATABASE
+        // ==========================================
+        async function handleScanSuccess(decodedText) {
+            if (isProcessingScan) return; // Mencegah scan ganda (bounce)
+            
+            isProcessingScan = true;
+            playBeep('success');
+            
+            // Jeda scanner kamera sementara memproses
+            if (html5QrcodeScanner && html5QrcodeScanner.getState() === 2) {
+                html5QrcodeScanner.pause();
+            }
+
+            showLoading(`Menyimpan resi: ${decodedText}`);
+
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'save',
+                        petugas: currentUser.name,
+                        resi: decodedText
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus('success', 'Berhasil Disimpan', `Resi: <b>${decodedText}</b>`);
+                    addHistory(decodedText, 'sukses');
+                } else {
+                    playBeep('error');
+                    showStatus('error', 'Gagal Disimpan', result.message);
+                    addHistory(decodedText, 'gagal');
+                }
+            } catch (err) {
+                playBeep('error');
+                showStatus('error', 'Kesalahan Jaringan', 'Tidak dapat menghubungi server.');
+                console.error(err);
+            } finally {
+                hideLoading();
+                
+                // Beri delay sedikit sebelum bisa scan lagi
+                setTimeout(() => {
+                    isProcessingScan = false;
+                    // Lanjutkan kamera
+                    if (html5QrcodeScanner && html5QrcodeScanner.getState() === 3) { // 3 = PAUSED
+                        html5QrcodeScanner.resume();
+                    }
+                    // Focus kembali ke USB input jika tab aktif
+                    if(document.getElementById('view-usb').classList.contains('hidden') === false) {
+                        document.getElementById('usb-input').focus();
+                    }
+                }, 1500);
+            }
+        }
+
+        // ==========================================
+        // 3. LOGIKA USB SCANNER
+        // ==========================================
+        function processUsbScan() {
+            const inputEl = document.getElementById('usb-input');
+            const resi = inputEl.value.trim();
+            if(resi) {
+                inputEl.value = ''; // Langsung kosongkan form
+                handleScanSuccess(resi);
+            }
+        }
+
+        // ==========================================
+        // 4. LOGIKA KAMERA SCANNER (html5-qrcode)
+        // ==========================================
+        function initCameraScanner() {
+            if (html5QrcodeScanner === null) {
+                html5QrcodeScanner = new Html5Qrcode("reader");
+            }
+            
+            // Konfigurasi agar responsif dan cepat menangkap barcode 1D (resi)
+            const config = { 
+                fps: 10, 
+                qrbox: { width: 250, height: 100 }, // Bentuk persegi panjang untuk barcode
+                aspectRatio: 1.0,
+                formatsToSupport: [ 
+                    Html5QrcodeSupportedFormats.CODE_128, 
+                    Html5QrcodeSupportedFormats.CODE_39,
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.QR_CODE
+                ]
+            };
+
+            html5QrcodeScanner.start({ facingMode: "environment" }, config, handleScanSuccess)
+                .catch(err => {
+                    console.error("Camera start error", err);
+                    showStatus('error', 'Kamera Error', 'Mohon izinkan akses kamera pada browser Anda.');
+                });
+        }
+
+        function stopCameraScanner() {
+            if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+                html5QrcodeScanner.stop().catch(console.error);
+            }
+        }
+
+        // ==========================================
+        // 5. MANAJEMEN TAB & UI
+        // ==========================================
+        function switchTab(tab) {
+            const btnCam = document.getElementById('tab-camera');
+            const btnUsb = document.getElementById('tab-usb');
+            const viewCam = document.getElementById('view-camera');
+            const viewUsb = document.getElementById('view-usb');
+            const usbInput = document.getElementById('usb-input');
+
+            hideStatus();
+
+            if (tab === 'camera') {
+                btnCam.className = "flex-1 py-3 text-center tab-active flex items-center justify-center gap-2";
+                btnUsb.className = "flex-1 py-3 text-center tab-inactive flex items-center justify-center gap-2";
+                viewCam.classList.remove('hidden');
+                viewUsb.classList.add('hidden');
+                initCameraScanner();
+            } else {
+                btnUsb.className = "flex-1 py-3 text-center tab-active flex items-center justify-center gap-2";
+                btnCam.className = "flex-1 py-3 text-center tab-inactive flex items-center justify-center gap-2";
+                viewUsb.classList.remove('hidden');
+                viewCam.classList.add('hidden');
+                stopCameraScanner();
+                // Auto focus untuk persiapan alat USB Scanner
+                setTimeout(() => usbInput.focus(), 100);
+            }
+        }
+
+        // Menjaga agar USB input selalu fokus jika diklik diluar
+        document.getElementById('view-usb').addEventListener('click', () => {
+            document.getElementById('usb-input').focus();
+        });
+
+        // ==========================================
+        // 6. HELPER FUNCTIONS
+        // ==========================================
+        function showLoading(text) {
+            elLoadingText.textContent = text;
+            elLoading.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            elLoading.classList.add('hidden');
+        }
+
+        function showStatus(type, title, message) {
+            const statusBox = document.getElementById('scan-status');
+            const icon = document.getElementById('status-icon');
+            
+            statusBox.classList.remove('hidden', 'bg-green-50', 'border-green-200', 'text-green-800', 'bg-red-50', 'border-red-200', 'text-red-800');
+            icon.className = 'text-2xl mt-0.5';
+
+            if (type === 'success') {
+                statusBox.classList.add('bg-green-50', 'border-green-200', 'text-green-800');
+                icon.classList.add('ph', 'ph-check-circle', 'text-green-600');
+            } else {
+                statusBox.classList.add('bg-red-50', 'border-red-200', 'text-red-800');
+                icon.classList.add('ph', 'ph-warning-circle', 'text-red-600');
+            }
+
+            document.getElementById('status-title').innerHTML = title;
+            document.getElementById('status-message').innerHTML = message;
+
+            // Otomatis sembunyikan setelah 4 detik
+            setTimeout(hideStatus, 4000);
+        }
+
+        function hideStatus() {
+            document.getElementById('scan-status').classList.add('hidden');
+        }
+
+        function addHistory(resi, status) {
+            const ul = document.getElementById('scan-history');
+            const li = document.createElement('li');
+            const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            const colorClass = status === 'sukses' ? 'text-green-600' : 'text-red-600';
+            const iconClass = status === 'sukses' ? 'ph-check-circle' : 'ph-x-circle';
+
+            li.className = "text-sm bg-white p-2 rounded border border-gray-100 shadow-sm flex justify-between items-center";
+            li.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="ph ${iconClass} ${colorClass}"></i>
+                    <span class="font-mono text-gray-700 font-medium">${resi}</span>
+                </div>
+                <span class="text-xs text-gray-400">${time}</span>
+            `;
+            
+            // Masukkan di paling atas
+            ul.insertBefore(li, ul.firstChild);
+            
+            // Batasi maksimal 5 riwayat agar tidak penuh
+            if(ul.children.length > 5) {
+                ul.removeChild(ul.lastChild);
+            }
+        }
+    </script>
+</body>
+</html>
