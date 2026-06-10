@@ -217,15 +217,9 @@
             showLoading("Memeriksa kredensial...");
 
             try {
-                // UPDATE: Menambahkan text/plain untuk mencegah blokir CORS preflight browser
-                const response = await fetch(GAS_URL, {
-                    method: 'POST',
-                    redirect: 'follow',
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8',
-                    },
-                    body: JSON.stringify({ action: 'login', username: user, password: pass })
-                });
+                // UPDATE: Menggunakan metode GET untuk menghindari block CORS dari Google
+                const url = `${GAS_URL}?action=login&username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`;
+                const response = await fetch(url);
                 
                 const result = await response.json();
                 
@@ -281,19 +275,9 @@
             showLoading(`Menyimpan resi: ${decodedText}`);
 
             try {
-                // UPDATE: Menambahkan text/plain untuk mencegah blokir CORS preflight browser
-                const response = await fetch(GAS_URL, {
-                    method: 'POST',
-                    redirect: 'follow',
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8',
-                    },
-                    body: JSON.stringify({
-                        action: 'save',
-                        petugas: currentUser.name,
-                        resi: decodedText
-                    })
-                });
+                // UPDATE: Menggunakan metode GET untuk menghindari block CORS dari Google
+                const url = `${GAS_URL}?action=save&petugas=${encodeURIComponent(currentUser.name)}&resi=${encodeURIComponent(decodedText)}`;
+                const response = await fetch(url);
 
                 const result = await response.json();
 
