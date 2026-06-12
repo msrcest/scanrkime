@@ -24,7 +24,11 @@
 </head>
 <body class="text-gray-800 antialiased h-screen flex flex-col">
 
+    <!-- ==========================================
+         PENTING: GANTI URL DI BAWAH INI
+         ========================================== -->
     <script>
+        // PASTE URL WEB APP APPS SCRIPT ANDA DI SINI
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxs3sYm61aw9epKwrXExGnLW5GcvB1wn-WtDSqKZONLSmcwpCVmOUPVoWbCrVDRP0Ib/exec"; 
     </script>
 
@@ -155,6 +159,18 @@
             </div>
         </div>
 
+        <!-- OVERLAY MODAL DUPLIKAT (GALAK) -->
+        <div id="modal-duplikat" class="hidden absolute inset-0 bg-red-600 z-[60] flex flex-col justify-center items-center p-6 text-center shadow-2xl">
+            <i class="ph ph-warning-octagon text-9xl text-white mb-6 animate-pulse"></i>
+            <h2 class="text-4xl font-black text-white mb-2 uppercase tracking-widest">DUPLIKAT!</h2>
+            <p class="text-red-100 text-lg mb-2">Resi: <span id="modal-duplikat-resi" class="font-mono font-bold text-white bg-red-800 px-3 py-1 rounded"></span></p>
+            <div id="modal-duplikat-msg" class="bg-white/20 text-white rounded-lg p-4 mb-8 w-full max-w-sm font-medium border border-red-400 text-sm"></div>
+            
+            <button onclick="closeModalDuplikat()" class="bg-white text-red-700 hover:bg-gray-100 font-black text-xl py-4 px-8 rounded-full shadow-lg transition-transform active:scale-95 w-full max-w-sm">
+                SAYA MENGERTI (TUTUP)
+            </button>
+        </div>
+
         <!-- OVERLAY LOADING GLOBAL -->
         <div id="loading-overlay" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col justify-center items-center z-50">
             <div class="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
@@ -181,6 +197,16 @@
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
                 oscillator.start();
                 oscillator.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'duplicate') {
+                // Suara alarm agresif (Square wave) untuk duplikat
+                oscillator.type = 'square';
+                oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+                oscillator.frequency.setValueAtTime(600, audioCtx.currentTime + 0.15);
+                oscillator.frequency.setValueAtTime(300, audioCtx.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.5);
             } else { // error
                 oscillator.type = 'sawtooth';
                 oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
@@ -291,12 +317,12 @@
             
             isProcessingScan = true;
             
-            // Jeda scanner kamera sementara memproses
+            // Jeda scanner kamera sementara memproses (freeze layar)
             if (html5QrcodeScanner && html5QrcodeScanner.getState() === 2) {
-                html5QrcodeScanner.pause();
+                html5QrcodeScanner.pause(true); 
             }
 
-            showLoading(`Mengecek resi: ${decodedText}`);
+            showLoading(`Menyimpan resi...`);
 
             try {
                 // UPDATE: Menggunakan metode GET untuk menghindari block CORS dari Google
@@ -309,40 +335,66 @@
                     playBeep('success');
                     showStatus('success', 'Berhasil Disimpan', `Resi: <b>${decodedText}</b>`);
                     addHistory(decodedText, 'sukses');
+
+                    // UPDATE: Tambah angka statistik lokal agar tidak perlu loading API 2x
+                    const elSukses = document.getElementById('stat-sukses');
+                    elSukses.textContent = parseInt(elSukses.textContent) + 1;
+                    
+                    // UPDATE: Resume scanner super cepat (0.3 detik)
+                    setTimeout(() => { resumeScanner(); }, 300);
+
                 } else if (result.isDuplicate) {
-                    playBeep('error');
-                    // Muncul Peringatan Merah
-                    showStatus('error', 'Resi Sudah Di-scan!', result.message);
-                    addHistory(decodedText, 'gagal');
+                    playBeep('duplicate');
+                    showDuplicateModal(decodedText, result.message);
+                    addHistory(decodedText, 'gagal', result.message);
+                    
+                    const elDup = document.getElementById('stat-duplikat');
+                    elDup.textContent = parseInt(elDup.textContent) + 1;
+                    
+                    // Scanner TIDAK di-resume otomatis. Harus tunggu user klik tombol tutup modal.
+
                 } else {
                     playBeep('error');
                     showStatus('error', 'Gagal Disimpan', result.message);
-                    addHistory(decodedText, 'gagal');
+                    addHistory(decodedText, 'gagal', result.message);
+                    setTimeout(() => { resumeScanner(); }, 1500);
                 }
 
-                // Update angka statistik setelah scan
-                await fetchStats();
+                // Hapus pemanggilan fetchStats() di sini karena sudah diupdate secara lokal
 
             } catch (err) {
                 playBeep('error');
                 showStatus('error', 'Kesalahan Jaringan', 'Tidak dapat menghubungi server.');
                 console.error(err);
+                setTimeout(() => { resumeScanner(); }, 1500);
             } finally {
                 hideLoading();
-                
-                // Beri delay sedikit sebelum bisa scan lagi
-                setTimeout(() => {
-                    isProcessingScan = false;
-                    // Lanjutkan kamera
-                    if (html5QrcodeScanner && html5QrcodeScanner.getState() === 3) { // 3 = PAUSED
-                        html5QrcodeScanner.resume();
-                    }
-                    // Focus kembali ke USB input jika tab aktif
-                    if(document.getElementById('view-usb').classList.contains('hidden') === false) {
-                        document.getElementById('usb-input').focus();
-                    }
-                }, 1500);
             }
+        }
+
+        // FUNGSI BARU UNTUK RESUME SCANNER
+        function resumeScanner() {
+            isProcessingScan = false;
+            if (html5QrcodeScanner && html5QrcodeScanner.getState() === 3) { // 3 = PAUSED
+                html5QrcodeScanner.resume();
+            }
+            if(!document.getElementById('view-usb').classList.contains('hidden')) {
+                document.getElementById('usb-input').focus();
+            }
+        }
+
+        // FUNGSI BARU UNTUK MODAL DUPLIKAT
+        function showDuplicateModal(resi, message) {
+            document.getElementById('modal-duplikat').classList.remove('hidden');
+            document.getElementById('modal-duplikat-resi').textContent = resi;
+            document.getElementById('modal-duplikat-msg').innerHTML = message;
+            // Getar paksa (jika didukung perangkat/browser)
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
+        }
+
+        function closeModalDuplikat() {
+            document.getElementById('modal-duplikat').classList.add('hidden');
+            resumeScanner(); // Lanjutkan scan
         }
 
         // ==========================================
@@ -463,28 +515,35 @@
             document.getElementById('scan-status').classList.add('hidden');
         }
 
-        function addHistory(resi, status) {
+        function addHistory(resi, status, detailMsg = '') {
             const ul = document.getElementById('scan-history');
             const li = document.createElement('li');
             const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             
             const colorClass = status === 'sukses' ? 'text-green-600' : 'text-red-600';
-            const iconClass = status === 'sukses' ? 'ph-check-circle' : 'ph-x-circle';
+            const iconClass = status === 'sukses' ? 'ph-check-circle' : 'ph-warning-octagon';
+            const bgClass = status === 'sukses' ? 'bg-white' : 'bg-red-50 border border-red-200';
 
-            li.className = "text-sm bg-white p-2 rounded border border-gray-100 shadow-sm flex justify-between items-center";
+            // Menampilkan detail alert di riwayat jika status gagal/duplikat
+            let detailHtml = detailMsg ? `<div class="text-[11px] text-red-600 mt-2 pl-7 border-t border-red-200 pt-1">${detailMsg}</div>` : '';
+
+            li.className = `text-sm p-3 rounded shadow-sm flex flex-col ${bgClass}`;
             li.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <i class="ph ${iconClass} ${colorClass}"></i>
-                    <span class="font-mono text-gray-700 font-medium">${resi}</span>
+                <div class="flex justify-between items-center w-full">
+                    <div class="flex items-center gap-2">
+                        <i class="ph ${iconClass} ${colorClass} text-lg"></i>
+                        <span class="font-mono text-gray-800 font-bold">${resi}</span>
+                    </div>
+                    <span class="text-xs text-gray-500 font-medium">${time}</span>
                 </div>
-                <span class="text-xs text-gray-400">${time}</span>
+                ${detailHtml}
             `;
             
             // Masukkan di paling atas
             ul.insertBefore(li, ul.firstChild);
             
-            // Batasi maksimal 5 riwayat agar tidak penuh
-            if(ul.children.length > 5) {
+            // Batasi maksimal 15 riwayat agar bisa cek tracking yang lama
+            if(ul.children.length > 15) {
                 ul.removeChild(ul.lastChild);
             }
         }
