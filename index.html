@@ -24,11 +24,7 @@
 </head>
 <body class="text-gray-800 antialiased h-screen flex flex-col">
 
-    <!-- ==========================================
-         PENTING: GANTI URL DI BAWAH INI
-         ========================================== -->
     <script>
-        // PASTE URL WEB APP APPS SCRIPT ANDA DI SINI
         const GAS_URL = "https://script.google.com/macros/s/AKfycbxs3sYm61aw9epKwrXExGnLW5GcvB1wn-WtDSqKZONLSmcwpCVmOUPVoWbCrVDRP0Ib/exec"; 
     </script>
 
@@ -92,6 +88,18 @@
                 <button onclick="logout()" class="p-2 bg-blue-700 hover:bg-blue-800 rounded-lg transition">
                     <i class="ph ph-sign-out text-xl"></i>
                 </button>
+            </div>
+
+            <!-- STATISTIK HARI INI -->
+            <div class="grid grid-cols-2 gap-4 p-4 bg-white border-b border-gray-200">
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 text-center shadow-sm">
+                    <p class="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-1">Sukses Hari Ini</p>
+                    <p class="text-4xl font-black text-blue-700" id="stat-sukses">0</p>
+                </div>
+                <div class="bg-red-50 p-3 rounded-xl border border-red-100 text-center shadow-sm">
+                    <p class="text-[10px] text-red-600 font-bold uppercase tracking-wider mb-1">Duplikat Hari Ini</p>
+                    <p class="text-4xl font-black text-red-700" id="stat-duplikat">0</p>
+                </div>
             </div>
 
             <!-- TABS -->
@@ -227,6 +235,9 @@
                     currentUser = result; // {name: '...', role: '...'}
                     document.getElementById('display-user').textContent = `${currentUser.name} (${currentUser.role})`;
                     
+                    // Fetch statistik hari ini
+                    await fetchStats();
+
                     // Bersihkan form & Pindah halaman
                     document.getElementById('login-form').reset();
                     elLogin.classList.add('hidden');
@@ -261,18 +272,31 @@
         // ==========================================
         // 2. SISTEM SCAN & KIRIM KE DATABASE
         // ==========================================
+        async function fetchStats() {
+            try {
+                const url = `${GAS_URL}?action=get_stats`;
+                const response = await fetch(url);
+                const result = await response.json();
+                if (result.success) {
+                    document.getElementById('stat-sukses').textContent = result.scanCount;
+                    document.getElementById('stat-duplikat').textContent = result.dupCount;
+                }
+            } catch (err) {
+                console.error("Gagal mengambil statistik:", err);
+            }
+        }
+
         async function handleScanSuccess(decodedText) {
             if (isProcessingScan) return; // Mencegah scan ganda (bounce)
             
             isProcessingScan = true;
-            playBeep('success');
             
             // Jeda scanner kamera sementara memproses
             if (html5QrcodeScanner && html5QrcodeScanner.getState() === 2) {
                 html5QrcodeScanner.pause();
             }
 
-            showLoading(`Menyimpan resi: ${decodedText}`);
+            showLoading(`Mengecek resi: ${decodedText}`);
 
             try {
                 // UPDATE: Menggunakan metode GET untuk menghindari block CORS dari Google
@@ -282,13 +306,23 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    playBeep('success');
                     showStatus('success', 'Berhasil Disimpan', `Resi: <b>${decodedText}</b>`);
                     addHistory(decodedText, 'sukses');
+                } else if (result.isDuplicate) {
+                    playBeep('error');
+                    // Muncul Peringatan Merah
+                    showStatus('error', 'Resi Sudah Di-scan!', result.message);
+                    addHistory(decodedText, 'gagal');
                 } else {
                     playBeep('error');
                     showStatus('error', 'Gagal Disimpan', result.message);
                     addHistory(decodedText, 'gagal');
                 }
+
+                // Update angka statistik setelah scan
+                await fetchStats();
+
             } catch (err) {
                 playBeep('error');
                 showStatus('error', 'Kesalahan Jaringan', 'Tidak dapat menghubungi server.');
